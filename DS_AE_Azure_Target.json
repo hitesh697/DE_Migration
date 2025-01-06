@@ -1,0 +1,39 @@
+{
+    "name": "DS_AE_Azure_Target",
+    "properties": {
+        "linkedServiceName": {
+            "referenceName": "LS_AZURE_SQL_DB",
+            "type": "LinkedServiceReference"
+        },
+        "parameters": {
+            "SchemaName": {
+                "type": "string"
+            },
+            "TableName": {
+                "type": "string"
+            }
+        },
+        "folder": {
+            "name": "Dubai"
+        },
+        "annotations": [],
+        "type": "AzureSqlTable",
+        "schema": [
+            {
+                "name": "EmployeeName",
+                "type": "nvarchar"
+            }
+        ],
+        "typeProperties": {
+            "schema": {
+                "value": "@dataset().SchemaName",
+                "type": "Expression"
+            },
+            "table": {
+                "value": "@dataset().TableName",
+                "type": "Expression"
+            }
+        }
+    },
+    "type": "Microsoft.DataFactory/factories/datasets"
+}

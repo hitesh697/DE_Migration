@@ -1,0 +1,93 @@
+{
+    "name": "DS_LogTable",
+    "properties": {
+        "linkedServiceName": {
+            "referenceName": "LS_AZURE_SQL_DB",
+            "type": "LinkedServiceReference"
+        },
+        "folder": {
+            "name": "Common"
+        },
+        "annotations": [],
+        "type": "AzureSqlTable",
+        "schema": [
+            {
+                "name": "StartDateTime",
+                "type": "smalldatetime",
+                "precision": 16,
+                "scale": 0
+            },
+            {
+                "name": "EndDateTime",
+                "type": "smalldatetime",
+                "precision": 16,
+                "scale": 0
+            },
+            {
+                "name": "SourceSystemName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceServerName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceDBName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceTableName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "PipelineName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "MaxProcessedTs",
+                "type": "datetime",
+                "precision": 23,
+                "scale": 3
+            },
+            {
+                "name": "MinProcessedTs",
+                "type": "datetime",
+                "precision": 23,
+                "scale": 3
+            },
+            {
+                "name": "Result",
+                "type": "varchar"
+            },
+            {
+                "name": "SourceRowCount",
+                "type": "int",
+                "precision": 10
+            },
+            {
+                "name": "TargetRowCount",
+                "type": "int",
+                "precision": 10
+            },
+            {
+                "name": "RowCountDifference",
+                "type": "int",
+                "precision": 10
+            },
+            {
+                "name": "TimeElapsed",
+                "type": "time",
+                "scale": 7
+            },
+            {
+                "name": "ErrorMessage",
+                "type": "nvarchar"
+            }
+        ],
+        "typeProperties": {
+            "schema": "dbo",
+            "table": "LoadLogging"
+        }
+    },
+    "type": "Microsoft.DataFactory/factories/datasets"
+}

@@ -1,0 +1,81 @@
+{
+    "name": "DS_ConfigTable",
+    "properties": {
+        "linkedServiceName": {
+            "referenceName": "LS_AZURE_SQL_DB",
+            "type": "LinkedServiceReference"
+        },
+        "folder": {
+            "name": "Common"
+        },
+        "annotations": [],
+        "type": "AzureSqlTable",
+        "schema": [
+            {
+                "name": "ConfigID",
+                "type": "int",
+                "precision": 10
+            },
+            {
+                "name": "SourceSystemName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceServerName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceDataBase",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceSchema",
+                "type": "nvarchar"
+            },
+            {
+                "name": "TableName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "TableFields",
+                "type": "nvarchar"
+            },
+            {
+                "name": "KeyFields",
+                "type": "nvarchar"
+            },
+            {
+                "name": "HasModifiedOn",
+                "type": "tinyint",
+                "precision": 3
+            },
+            {
+                "name": "Frequency",
+                "type": "nvarchar"
+            },
+            {
+                "name": "SourceLMOColName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "MaxProcessedTS",
+                "type": "datetime2",
+                "scale": 7
+            },
+            {
+                "name": "LinkedServiceName",
+                "type": "nvarchar"
+            },
+            {
+                "name": "ConfigLastUpdateTS",
+                "type": "datetime2",
+                "scale": 7
+            }
+        ],
+        "typeProperties": {
+            "schema": "dbo",
+            "table": "ConfigTable"
+        }
+    },
+    "type": "Microsoft.DataFactory/factories/datasets"
+}
