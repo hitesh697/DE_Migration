@@ -1,0 +1,6 @@
+selected resource name:		PL_AE_ HOURLY
+selected resource type:		pipeline
+factory name:			gravity-adf-01
+factory location:		westeurope
+subscription id:		3cb8b38c-c13b-4e3a-9f4b-0dc64b660ee5
+time of download (UTC):		Thu, 26 Dec 2024 06:09:58 GMT
