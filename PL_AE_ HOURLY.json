@@ -1,0 +1,975 @@
+{
+    "name": "PL_AE_ HOURLY",
+    "properties": {
+        "activities": [
+            {
+                "name": "Fetch Tables to Process",
+                "description": "Get the table details from Config where the site is \"AE\" and the schedule is set to  every 1 hour.",
+                "type": "Lookup",
+                "dependsOn": [],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 3,
+                    "retryIntervalInSeconds": 120,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzureSqlSource",
+                        "sqlReaderQuery": "select * from dbo.configtable where SourceSystem='AE' and\nFrequency = 'HOURLY'",
+                        "queryTimeout": "00:10:00",
+                        "isolationLevel": "ReadCommitted",
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "DS_ConfigTable",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "Process the tables",
+                "description": "All tales will belong to one of the following 3 categories:\n1) they have Key Column(s) as well as \"ModifiedOn\" column\n2) they only have Key Column(s)\n3) They have neither Key Column(s) nor \"ModifiedOn\" column\n4) The default flow simply waits for 2 seconds and this activity completes.",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "Fetch Tables to Process",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('Fetch Tables to Process').output.value",
+                        "type": "Expression"
+                    },
+                    "batchCount": 4,
+                    "activities": [
+                        {
+                            "name": "Switch Activity For  Dynamic Table load",
+                            "description": "Switch Activity For Dynamically Loading Table Data ",
+                            "type": "Switch",
+                            "dependsOn": [],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "on": {
+                                    "value": "@if(\n    and(not(empty(item().KeyFields)), \n    not(empty(item().LMOColumnName))),\n    'Table with Key Column and ModifiedOn',\n    if(\n        and(not(empty(item().KeyFields)), \n        empty(item().LMOColumnName)),\n        'Table with only Key Column',\n        if(\n            empty(item().KeyFields),\n            'Table without Key Column and ModifiedOn',\n            'Default'\n        )\n    )\n)\n",
+                                    "type": "Expression"
+                                },
+                                "cases": [
+                                    {
+                                        "value": "Table with Key Column and ModifiedOn",
+                                        "activities": [
+                                            {
+                                                "name": "Bring Key Columns to Staging - 1",
+                                                "description": "Copy only Key Columns from Source to  perform DELETE on Target",
+                                                "type": "Copy",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "SqlServerSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "@concat('SELECT  ',item().KeyFields, ' FROM  ','[',item().SourceServer,'].','[',item().SourceDatabase,'].','[',\n\t\titem().SourceSchema,\n\t\t'].','[',\n\t\titem().SourceTable,']')\n",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "isolationLevel": "ReadCommitted",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "preCopyScript": {
+                                                            "value": "@concat('Truncate Table ',pipeline().parameters.AE_Schema,'.','[',item().TargetTable,'_Stg] ',';')",
+                                                            "type": "Expression"
+                                                        },
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_OnPrem_Source",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "LS_Name": {
+                                                                "value": "@item().ADFLinkedService",
+                                                                "type": "Expression"
+                                                            },
+                                                            "ServerName": {
+                                                                "value": "@item().SourceServer",
+                                                                "type": "Expression"
+                                                            },
+                                                            "DatabaseName": {
+                                                                "value": "@item().SourceDataBase",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Staging",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@concat(item().TargetTable,'_Stg')",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "SP to DELETE from Target - 1",
+                                                "description": "Stored Procedure to delete records from target that are not present in staging, based on Key Columns.",
+                                                "type": "SqlServerStoredProcedure",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "Bring Key Columns to Staging - 1",
+                                                        "dependencyConditions": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "storedProcedureName": "[dbo].[sp_TargetTable_Delete_Records]",
+                                                    "storedProcedureParameters": {
+                                                        "HasComputedColumn": {
+                                                            "value": {
+                                                                "value": "@item().HasComputedColumn",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "Int32"
+                                                        },
+                                                        "KeyFields": {
+                                                            "value": {
+                                                                "value": "@item().KeyFields",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "LMOColumnName": {
+                                                            "value": {
+                                                                "value": "@item().LMOColumnName",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "SourceSchema": {
+                                                            "value": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "SourceTable": {
+                                                            "value": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "TargetSchema": {
+                                                            "value": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "TargetTable": {
+                                                            "value": {
+                                                                "value": "@item().TargetTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        }
+                                                    }
+                                                },
+                                                "linkedServiceName": {
+                                                    "referenceName": "LS_AZURE_SQL_DB",
+                                                    "type": "LinkedServiceReference"
+                                                }
+                                            },
+                                            {
+                                                "name": "UPSERT delta records to Azure",
+                                                "description": "Use UPSERT into target table using Key Columns",
+                                                "type": "Copy",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "SP to DELETE from Target - 1",
+                                                        "dependencyConditions": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "SqlServerSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "@concat(  'SELECT ', item().TableFields,' FROM  ','[',item().SourceServer,'].','[',item().SourceDatabase,'].','[',\n\t\titem().SourceSchema,\n\t\t'].','[',\n\t\titem().SourceTable,']','  WHERE [', item().LMOColumnName, '] >= ''',formatDateTime(item().MaxProcessedTS, 'yyyy-MM-ddTHH:mm:ss') ,'''')",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "isolationLevel": "ReadCommitted",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "writeBehavior": "upsert",
+                                                        "upsertSettings": {
+                                                            "useTempDB": true,
+                                                            "keys": {
+                                                                "value": "@split(item().KeyFields, ',')",
+                                                                "type": "Expression"
+                                                            }
+                                                        },
+                                                        "sqlWriterUseTableLock": false,
+                                                        "disableMetricsCollection": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "enableSkipIncompatibleRow": false,
+                                                    "validateDataConsistency": true,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_OnPrem_Source",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "LS_Name": {
+                                                                "value": "@item().ADFLinkedService",
+                                                                "type": "Expression"
+                                                            },
+                                                            "ServerName": {
+                                                                "value": "@item().SourceServer",
+                                                                "type": "Expression"
+                                                            },
+                                                            "DatabaseName": {
+                                                                "value": "@item().SourceDataBase",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().TargetTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "Update Last Procssed TS in Config",
+                                                "description": "Update highest ModifiedOn value from current run in ConfigTable.",
+                                                "type": "Script",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "UPSERT delta records to Azure",
+                                                        "dependencyConditions": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "linkedServiceName": {
+                                                    "referenceName": "LS_AZURE_SQL_DB",
+                                                    "type": "LinkedServiceReference"
+                                                },
+                                                "typeProperties": {
+                                                    "scripts": [
+                                                        {
+                                                            "type": "Query",
+                                                            "text": {
+                                                                "value": "@concat(\n    'UPDATE [dbo].[configTable] SET ',\n    '[MaxProcessedTS] = (SELECT ISNULL(MAX(', item().LMOColumnName, '), ''1900-01-01 00:00:00'') ',\n    'FROM ', pipeline().parameters.AE_Schema, '.', '[', item().TargetTable, ']) ',\n    ', [ConfigLastUpdateTS] = GETDATE() ',\n    'WHERE [TargetTable] = ''', item().TargetTable, ''';'\n)",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    ],
+                                                    "scriptBlockExecutionTimeout": "02:00:00"
+                                                }
+                                            },
+                                            {
+                                                "name": "Log Table Entry - 1",
+                                                "description": "Add a record in Log table about pipeline run status.",
+                                                "type": "Copy",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "UPSERT delta records to Azure",
+                                                        "dependencyConditions": [
+                                                            "Completed"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "AzureSqlSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "SELECT TOP 1 \n    '@{activity('UPSERT delta records to Azure').output.executionDetails[0].start}' AS \"StartDateTime\",\n    '@{utcnow()}' AS EndDateTime,\n    '@{item().SourceSystem}' AS \"SourceSystemName\",\n    '@{item().SourceServer}' AS \"SourceServerName\",\n    '@{item().SourceDataBase}' AS \"SourceDBName\",\n    '@{item().SourceTable}' AS \"SourceTableName\",\n    '@{pipeline().Pipeline}' AS \"PipelineName\",\n    '@{activity('UPSERT delta records to Azure').output.executionDetails[0].status}' AS \"Result\",\n    '@{activity('UPSERT delta records to Azure').output.rowsRead}' AS \"SourceRowCount\",\n    '@{activity('UPSERT delta records to Azure').output.rowsCopied}' AS \"TargetRowCount\",\n    '@{sub(activity('UPSERT delta records to Azure').output.rowsRead, activity('UPSERT delta records to Azure').output.rowsCopied)}' AS \"RowCountDifference\",\n     DATEADD(SECOND,DATEDIFF(SECOND,('@{activity('UPSERT delta records to Azure').output.executionDetails[0].start}'),'@{utcnow()}'),0) as \"TimeElapsed\",\n   \n    '@{activity('UPSERT delta records to Azure')?.error?.message}' AS \"ErrorMessage\"\nFROM Dbo.configtable",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "isolationLevel": "ReadCommitted",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false,
+                                                        "disableMetricsCollection": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "enableSkipIncompatibleRow": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_LogTable",
+                                                        "type": "DatasetReference"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "value": "Table with only Key Column",
+                                        "activities": [
+                                            {
+                                                "name": "Bring Key Columns to Staging - 2",
+                                                "description": "Copy Key Columns from Source table to perform delete operation on target table",
+                                                "type": "Copy",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "SqlServerSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "@concat('SELECT  ',item().KeyFields, ' FROM  ','[',item().SourceServer,'].','[',item().SourceDatabase,'].','[',\n\t\titem().SourceSchema,\n\t\t'].','[',\n\t\titem().SourceTable,']')\n",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "preCopyScript": {
+                                                            "value": "@concat('Truncate Table ',pipeline().parameters.AE_Schema,'.','[',item().TargetTable,'_Stg] ',';')",
+                                                            "type": "Expression"
+                                                        },
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_OnPrem_Source",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "LS_Name": {
+                                                                "value": "@item().ADFLinkedService",
+                                                                "type": "Expression"
+                                                            },
+                                                            "ServerName": {
+                                                                "value": "@item().SourceServer",
+                                                                "type": "Expression"
+                                                            },
+                                                            "DatabaseName": {
+                                                                "value": "@item().SourceDataBase",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Staging",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@concat(item().TargetTable,'_Stg')",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "SP to DELETE from Target - 2",
+                                                "description": "Stored Procedure to delete records from target that are not present in staging, based on Key Columns.",
+                                                "type": "SqlServerStoredProcedure",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "Bring Key Columns to Staging - 2",
+                                                        "dependencyConditions": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "storedProcedureName": "[dbo].[sp_TargetTable_Delete_Records]",
+                                                    "storedProcedureParameters": {
+                                                        "HasComputedColumn": {
+                                                            "value": {
+                                                                "value": "@item().HasComputedColumn",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "Int32"
+                                                        },
+                                                        "KeyFields": {
+                                                            "value": {
+                                                                "value": "@item().KeyFields",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "LMOColumnName": {
+                                                            "value": {
+                                                                "value": "@item().LMOColumnName",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "SourceSchema": {
+                                                            "value": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "SourceTable": {
+                                                            "value": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "TargetSchema": {
+                                                            "value": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        },
+                                                        "TargetTable": {
+                                                            "value": {
+                                                                "value": "@item().TargetTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "type": "String"
+                                                        }
+                                                    }
+                                                },
+                                                "linkedServiceName": {
+                                                    "referenceName": "LS_AZURE_SQL_DB",
+                                                    "type": "LinkedServiceReference"
+                                                }
+                                            },
+                                            {
+                                                "name": "UPSERT Based on Key Columns",
+                                                "description": "Copy Key columns from source table to perform delete operation on target table with only Key fields",
+                                                "type": "Copy",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "SP to DELETE from Target - 2",
+                                                        "dependencyConditions": [
+                                                            "Succeeded"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "SqlServerSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "@concat('SELECT  ', item().TableFields, ' FROM  ','[',item().SourceServer,'].','[',item().SourceDatabase,'].','[',\n\t\titem().SourceSchema,\n\t\t'].','[',\n\t\titem().SourceTable,']')",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "writeBehavior": "upsert",
+                                                        "upsertSettings": {
+                                                            "useTempDB": true,
+                                                            "keys": {
+                                                                "value": "@split(item().KeyFields, ',')",
+                                                                "type": "Expression"
+                                                            }
+                                                        },
+                                                        "sqlWriterUseTableLock": false,
+                                                        "disableMetricsCollection": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_OnPrem_Source",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "LS_Name": {
+                                                                "value": "@item().ADFLinkedService",
+                                                                "type": "Expression"
+                                                            },
+                                                            "ServerName": {
+                                                                "value": "@item().SourceServer",
+                                                                "type": "Expression"
+                                                            },
+                                                            "DatabaseName": {
+                                                                "value": "@item().SourceDataBase",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().TargetTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "Log Table Entry - 2",
+                                                "description": "Add a record in Log table about pipeline run status.",
+                                                "type": "Copy",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "UPSERT Based on Key Columns",
+                                                        "dependencyConditions": [
+                                                            "Completed"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "AzureSqlSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "SELECT TOP 1 \n    '@{activity('UPSERT Based on Key Columns').output.executionDetails[0].start}' AS \"StartDateTime\",\n    '@{utcnow()}' AS EndDateTime,\n    '@{item().SourceSystem}' AS \"SourceSystemName\",\n    '@{item().SourceServer}' AS \"SourceServerName\",\n    '@{item().SourceDataBase}' AS \"SourceDBName\",\n    '@{item().SourceTable}' AS \"SourceTableName\",\n    '@{pipeline().Pipeline}' AS \"PipelineName\",\n    '@{activity('UPSERT Based on Key Columns').output.executionDetails[0].status}' AS \"Result\",\n    '@{activity('UPSERT Based on Key Columns').output.rowsRead}' AS \"SourceRowCount\",\n    '@{activity('UPSERT Based on Key Columns').output.rowsCopied}' AS \"TargetRowCount\",\n    '@{sub(activity('UPSERT Based on Key Columns').output.rowsRead, activity('UPSERT Based on Key Columns').output.rowsCopied)}' AS \"RowCountDifference\",\n     DATEADD(SECOND,DATEDIFF(SECOND,('@{activity('UPSERT Based on Key Columns').output.executionDetails[0].start}'),'@{utcnow()}'),0) as \"TimeElapsed\",\n   \n    '@{activity('UPSERT Based on Key Columns')?.error?.message}' AS \"ErrorMessage\"\nFROM Dbo.configtable",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_LogTable",
+                                                        "type": "DatasetReference"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "value": "Table without Key Column and ModifiedOn",
+                                        "activities": [
+                                            {
+                                                "name": "Full Copy",
+                                                "description": "Truncate and Reload Target Table.",
+                                                "type": "Copy",
+                                                "dependsOn": [],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "SqlServerSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "@concat('SELECT  ', item().TableFields, ' FROM  ','[',item().SourceServer,'].','[',item().SourceDatabase,'].','[',\n\t\titem().SourceSchema,\n\t\t'].','[',\n\t\titem().SourceTable,']')\n",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "preCopyScript": {
+                                                            "value": "@concat('Truncate Table ',pipeline().parameters.AE_Schema,'.','[',item().TargetTable,']',';')",
+                                                            "type": "Expression"
+                                                        },
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "enableSkipIncompatibleRow": true,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_OnPrem_Source",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "TableSchema": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            },
+                                                            "LS_Name": {
+                                                                "value": "@item().ADFLinkedService",
+                                                                "type": "Expression"
+                                                            },
+                                                            "ServerName": {
+                                                                "value": "@item().SourceServer",
+                                                                "type": "Expression"
+                                                            },
+                                                            "DatabaseName": {
+                                                                "value": "@item().SourceDataBase",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@pipeline().parameters.AE_Schema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().TargetTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "name": "Log Table Entry - 3",
+                                                "description": "Add a record in Log table about pipeline run status.",
+                                                "type": "Copy",
+                                                "dependsOn": [
+                                                    {
+                                                        "activity": "Full Copy",
+                                                        "dependencyConditions": [
+                                                            "Completed"
+                                                        ]
+                                                    }
+                                                ],
+                                                "policy": {
+                                                    "timeout": "0.00:10:00",
+                                                    "retry": 3,
+                                                    "retryIntervalInSeconds": 120,
+                                                    "secureOutput": false,
+                                                    "secureInput": false
+                                                },
+                                                "userProperties": [],
+                                                "typeProperties": {
+                                                    "source": {
+                                                        "type": "AzureSqlSource",
+                                                        "sqlReaderQuery": {
+                                                            "value": "SELECT TOP 1 \n    '@{activity('Full Copy').output.executionDetails[0].start}' AS \"StartDateTime\",\n    '@{utcnow()}' AS EndDateTime,\n    '@{item().SourceSystem}' AS \"SourceSystemName\",\n    '@{item().SourceServer}' AS \"SourceServerName\",\n    '@{item().SourceDataBase}' AS \"SourceDBName\",\n    '@{item().SourceTable}' AS \"SourceTableName\",\n    '@{pipeline().Pipeline}' AS \"PipelineName\",\n    '@{activity('Full Copy').output.executionDetails[0].status}' AS \"Result\",\n    '@{activity('Full Copy').output.rowsRead}' AS \"SourceRowCount\",\n    '@{activity('Full Copy').output.rowsCopied}' AS \"TargetRowCount\",\n    '@{sub(activity('Full Copy').output.rowsRead, activity('Full Copy').output.rowsCopied)}' AS \"RowCountDifference\",\n     DATEADD(SECOND,DATEDIFF(SECOND,('@{activity('Full Copy').output.executionDetails[0].start}'),'@{utcnow()}'),0) as \"TimeElapsed\",\n   \n    '@{activity('Full Copy')?.error?.message}' AS \"ErrorMessage\"\nFROM Dbo.configtable",
+                                                            "type": "Expression"
+                                                        },
+                                                        "queryTimeout": "00:10:00",
+                                                        "partitionOption": "None"
+                                                    },
+                                                    "sink": {
+                                                        "type": "AzureSqlSink",
+                                                        "writeBehavior": "insert",
+                                                        "sqlWriterUseTableLock": false
+                                                    },
+                                                    "enableStaging": false,
+                                                    "translator": {
+                                                        "type": "TabularTranslator",
+                                                        "typeConversion": true,
+                                                        "typeConversionSettings": {
+                                                            "allowDataTruncation": true,
+                                                            "treatBooleanAsNumber": false
+                                                        }
+                                                    }
+                                                },
+                                                "inputs": [
+                                                    {
+                                                        "referenceName": "DS_AE_Azure_Target",
+                                                        "type": "DatasetReference",
+                                                        "parameters": {
+                                                            "SchemaName": {
+                                                                "value": "@item().SourceSchema",
+                                                                "type": "Expression"
+                                                            },
+                                                            "TableName": {
+                                                                "value": "@item().SourceTable",
+                                                                "type": "Expression"
+                                                            }
+                                                        }
+                                                    }
+                                                ],
+                                                "outputs": [
+                                                    {
+                                                        "referenceName": "DS_LogTable",
+                                                        "type": "DatasetReference"
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ],
+                                "defaultActivities": [
+                                    {
+                                        "name": "Wait_2s",
+                                        "type": "Wait",
+                                        "dependsOn": [],
+                                        "userProperties": [],
+                                        "typeProperties": {
+                                            "waitTimeInSeconds": 1
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "AE_Schema": {
+                "type": "string",
+                "defaultValue": "AE"
+            }
+        },
+        "folder": {
+            "name": "AE"
+        },
+        "annotations": [],
+        "lastPublishTime": "2024-12-24T13:17:04Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}
